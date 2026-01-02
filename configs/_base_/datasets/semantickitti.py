@@ -10,40 +10,40 @@ class_names = [
     'fence', 'vegetation', 'trunck', 'terrian', 'pole', 'traffic-sign'
 ]
 labels_map = {
-    0:  -1,  # "unlabeled"
-    1:  -1,  # "outlier" -> unlabeled
+    0:  19,  # "unlabeled"
+    1:  19,  # "outlier" -> unlabeled
     10:  0,  # "car"
-    11: -1,  # "bicycle"
-    13: -1,  # "bus" -> other-vehicle
-    15: -1,  # "motorcycle"
-    16: -1,  # "on-rails" -> other-vehicle
-    18: -1,  # "truck"
-    20: -1,  # "other-vehicle"
+    11: 19,  # "bicycle"
+    13: 19,  # "bus" -> other-vehicle
+    15: 19,  # "motorcycle"
+    16: 19,  # "on-rails" -> other-vehicle
+    18: 19,  # "truck"
+    20: 19,  # "other-vehicle"
     30:  1,  # "person"
-    31: -1,  # "bicyclist"
-    32: -1,  # "motorcyclist"
+    31: 19,  # "bicyclist"
+    32: 19,  # "motorcyclist"
     40:  2,  # "road"
     44:  2,  # "parking"
     48:  3,  # "sidewalk"
-    49: -1,  # "other-ground"
+    49: 19,  # "other-ground"
     50:  5,  # "building"
     51:  5,  # "fence"
-    52: -1,  # "other-structure" -> unlabeled
+    52: 19,  # "other-structure" -> unlabeled
     60:  2,  # "lane-marking" -> road
     70:  6,  # "vegetation"
     71:  6,  # "trunk"
     72:  4,  # "terrain"
     80:  5,  # "pole"
     81:  5,  # "traffic-sign"
-    99: -1,  # "other-object" -> unlabeled
+    99: 19,  # "other-object" -> unlabeled
     252: 0,  # "moving-car" -> car
-    253: -1, # "moving-bicyclist"
+    253: 19, # "moving-bicyclist"
     254: 1,  # "moving-person" -> person
-    255: -1, # "moving-motorcyclist"
-    256: -1, # "moving-on-rails" -> other-vehicle
-    257: -1, # "moving-bus" -> other-vehicle
-    258: -1, # "moving-truck"
-    259: -1  # "moving-other-vehicle"
+    255: 19, # "moving-motorcyclist"
+    256: 19, # "moving-on-rails" -> other-vehicle
+    257: 19, # "moving-bus" -> other-vehicle
+    258: 19, # "moving-truck"
+    259: 19  # "moving-other-vehicle"
 }
 
 metainfo = dict(
