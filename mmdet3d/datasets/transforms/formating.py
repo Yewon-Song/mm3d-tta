@@ -181,6 +181,16 @@ class Pack3DDetInputs(BaseTransform):
                 results[key] = [to_tensor(res) for res in results[key]]
             else:
                 results[key] = to_tensor(results[key])
+
+            # PyTorch's cross_entropy/nll_loss require targets to be int64.
+            # Some datasets/pipelines produce int32 masks (e.g., via np.int32),
+            # which results in: "nll_loss... not implemented for 'Int'".
+            if key in ('pts_semantic_mask', 'pts_instance_mask',
+                       'gt_labels', 'gt_bboxes_labels'):
+                if isinstance(results[key], list):
+                    results[key] = [t.long() for t in results[key]]
+                else:
+                    results[key] = results[key].long()
         if 'gt_bboxes_3d' in results:
             if not isinstance(results['gt_bboxes_3d'], BaseInstance3DBoxes):
                 results['gt_bboxes_3d'] = to_tensor(results['gt_bboxes_3d'])

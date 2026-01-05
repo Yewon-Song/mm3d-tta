@@ -106,6 +106,21 @@ class MinkUNet(EncoderDecoder3D):
             SparseTensor: voxels with features.
         """
         voxel_dict = batch_inputs_dict['voxels']
+        # coors = voxel_dict['coors']
+        # voxels = voxel_dict['voxels']
+        # print('voxels', voxels.shape, voxels.dtype)
+        # print('coors ', coors.shape, coors.dtype)
+        # print('coors min', coors.min(0).values)
+        # print('coors max', coors.max(0).values)
+        # print('any neg', (coors < 0).any().item())
+        # print('batch uniq', coors[:,0].unique())
+        # print('voxel_dict keys:', voxel_dict.keys())
+        # if 'spatial_shape' in voxel_dict:
+        #     print('spatial_shape:', voxel_dict['spatial_shape'])
+        # if 'voxel_shape' in voxel_dict:
+        #     print('voxel_shape:', voxel_dict['voxel_shape'])
+
+
         x = self.backbone(voxel_dict['voxels'], voxel_dict['coors'])
         if self.with_neck:
             x = self.neck(x)

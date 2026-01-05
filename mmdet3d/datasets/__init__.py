@@ -4,6 +4,17 @@ from .det3d_dataset import Det3DDataset
 from .kitti_dataset import KittiDataset
 from .lyft_dataset import LyftDataset
 from .nuscenes_dataset import NuScenesDataset
+try:
+    # Import segmentation dataset adapter from projects if available to
+    # register NuScenesSegDataset in DATASETS registry. This import is
+    # optional and will be skipped silently if the projects package is
+    # not present in PYTHONPATH.
+    from .nuScenes_seg_adapter import NuScenesSegDataset  # noqa: F401
+except Exception:
+    # projects/TPVFormer may not be present; NuScenesSegDataset will not
+    # be registered in that case. If you need segmentation dataset, make
+    # sure the project is importable or add an implementation here.
+    pass
 # yapf: enable
 from .s3dis_dataset import S3DISDataset, S3DISSegDataset
 from .scannet_dataset import (ScanNetDataset, ScanNetInstanceSegDataset,

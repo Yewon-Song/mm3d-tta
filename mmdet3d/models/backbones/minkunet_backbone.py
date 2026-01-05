@@ -3,6 +3,7 @@ import warnings
 from functools import partial
 from typing import List
 
+import numpy as np
 import torch
 from mmengine.model import BaseModule
 from mmengine.registry import MODELS
@@ -207,11 +208,70 @@ class MinkUNetBackbone(BaseModule):
         Returns:
             Tensor: Backbone features.
         """
+        # Validate input coordinates to prevent CUDA illegal memory access
+        if coors.numel() > 0:
+            # Ensure coors are on CPU for validation to avoid GPU-CPU sync issues
+            coors_cpu = coors.cpu() if coors.is_cuda else coors
+            
+            # Check for negative coordinates (except batch_idx which can be 0)
+            spatial_coors = coors_cpu[:, 1:4]
+            if (spatial_coors < 0).any():
+                min_coors = spatial_coors.min(0)[0]
+                raise ValueError(
+                    f'Found negative spatial coordinates. Min coors: {min_coors}')
+            
+            # Check for NaN or Inf values
+            if not torch.isfinite(coors_cpu).all():
+                raise ValueError('Found NaN or Inf values in coordinates')
+            
+            # Check coordinate ranges are reasonable
+            max_coors = spatial_coors.max(0)[0]
+            if (max_coors > 1e6).any():
+                warnings.warn(
+                    f'Very large coordinate values detected: {max_coors}. '
+                    'This may cause CUDA memory errors.')
+        
         if self.sparseconv_backend == 'torchsparse':
             x = torchsparse.SparseTensor(voxel_features, coors)
         elif self.sparseconv_backend == 'spconv':
-            spatial_shape = coors.max(0)[0][1:] + 1
-            batch_size = int(coors[-1, 0]) + 1
+            # Calculate spatial_shape more safely
+            # Ensure we get max coordinates per batch to avoid issues
+            if coors.numel() == 0:
+                raise ValueError('Empty coordinates tensor')
+            
+            # Get max coordinates, handling empty batches
+            coors_cpu = coors.cpu() if coors.is_cuda else coors
+            max_coors_per_dim = coors_cpu[:, 1:4].max(0)[0]
+            spatial_shape = (max_coors_per_dim + 1).numpy().astype(np.int32)
+            
+            # Get batch size from max batch index
+            batch_size = int(coors_cpu[:, 0].max().item()) + 1
+            
+            # Validate spatial_shape
+            if (spatial_shape < 1).any():
+                raise ValueError(
+                    f'Invalid spatial_shape: {spatial_shape}. '
+                    f'Max coors: {max_coors_per_dim}. '
+                    f'This may be caused by invalid coordinates.')
+            
+            # Critical: Verify all coordinates are within spatial_shape bounds
+            # This is the most common cause of CUDA illegal memory access
+            for i in range(3):
+                out_of_bounds = (coors_cpu[:, i+1] >= spatial_shape[i]).any()
+                if out_of_bounds:
+                    invalid_coors = coors_cpu[coors_cpu[:, i+1] >= spatial_shape[i]]
+                    raise ValueError(
+                        f'Coordinates exceed spatial_shape[{i}]={spatial_shape[i]}. '
+                        f'Found {len(invalid_coors)} invalid coordinates. '
+                        f'Max coord in dim {i}: {coors_cpu[:, i+1].max().item()}, '
+                        f'spatial_shape[{i}]: {spatial_shape[i]}')
+            
+            # Warn if spatial_shape is very large (memory concern)
+            if (spatial_shape > 10000).any():
+                warnings.warn(
+                    f'Very large spatial_shape detected: {spatial_shape}. '
+                    f'This may cause memory issues. Consider checking voxelization settings.')
+            
             x = SparseConvTensor(voxel_features, coors, spatial_shape,
                                  batch_size)
         elif self.sparseconv_backend == 'minkowski':
