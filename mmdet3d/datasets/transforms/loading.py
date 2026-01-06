@@ -491,7 +491,52 @@ class PointSegClassMapping(BaseTransform):
 
         assert 'seg_label_mapping' in results
         label_mapping = results['seg_label_mapping']
-        converted_pts_sem_mask = label_mapping[pts_semantic_mask]
+
+        # Get ignore index from results (fall back to 255 if not provided)
+        ignore_index = results.get('ignore_index', 255)
+
+        # Safely apply seg_label_mapping to pts_semantic_mask.
+        # pts_semantic_mask may contain unexpected values or wrong dtypes
+        # (e.g., large garbage values). Map element-wise with a safe
+        # fallback to `ignore_index` for unknown labels.
+        pts = np.asarray(pts_semantic_mask)
+
+        if isinstance(label_mapping, dict):
+            # If label range is small, use vectorized array indexing for speed.
+            try:
+                max_key = max(label_mapping.keys())
+            except ValueError:
+                # empty mapping
+                results['pts_semantic_mask'] = np.full_like(pts, ignore_index, dtype=np.int32)
+            else:
+                if pts.size == 0:
+                    converted_pts_sem_mask = np.zeros_like(pts, dtype=np.int32)
+                else:
+                    # if pts contains reasonable max value, build an index array
+                    pts_max = int(pts.max()) if np.issubdtype(pts.dtype, np.integer) else -1
+                    if 0 <= pts_max <= max_key and pts_max < 10000:
+                        label_mapping_array = np.full(max_key + 1, ignore_index, dtype=np.int32)
+                        for key, value in label_mapping.items():
+                            if 0 <= int(key) < label_mapping_array.size:
+                                label_mapping_array[int(key)] = int(value)
+                        converted_pts_sem_mask = label_mapping_array[pts]
+                    else:
+                        # Fallback: map only unique values to avoid huge arrays
+                        unique_vals = np.unique(pts)
+                        map_dict = {int(v): int(label_mapping.get(int(v), ignore_index)) for v in unique_vals}
+                        vectorized = np.vectorize(lambda x: map_dict.get(int(x), ignore_index), otypes=[np.int32])
+                        converted_pts_sem_mask = vectorized(pts)
+        else:
+            # label_mapping is array-like: use safe bounds check
+            arr = np.asarray(label_mapping, dtype=np.int32)
+            if pts.size == 0:
+                converted_pts_sem_mask = np.zeros_like(pts, dtype=np.int32)
+            else:
+                # map values within bounds, else set to ignore_index
+                converted_pts_sem_mask = np.full(pts.shape, ignore_index, dtype=np.int32)
+                mask = (pts >= 0) & (pts < arr.size)
+                if np.any(mask):
+                    converted_pts_sem_mask[mask] = arr[pts[mask]]
 
         results['pts_semantic_mask'] = converted_pts_sem_mask
 
@@ -969,6 +1014,23 @@ class LoadAnnotations3D(LoadAnnotations):
             pts_semantic_mask = pts_semantic_mask.astype(np.int64)
             pts_semantic_mask = pts_semantic_mask % self.seg_offset
         # nuScenes loads semantic and panoptic labels from different files.
+
+        # Sanity check: nuScenes lidarseg masks must have the same length as
+        # the loaded point cloud. If this is violated, later GPU indexing
+        # (e.g., pts_semantic_mask[inds]) can trigger device-side asserts.
+        # # NOTE: `LoadPointsFromFile` is typically placed before this transform,
+        # # so `results['points']` should already exist.
+        # if 'points' in results:
+        #     try:
+        #         num_points = int(results['points'].shape[0])
+        #     except Exception:
+        #         num_points = None
+        #     if num_points is not None and pts_semantic_mask.shape[0] != num_points:
+        #         raise ValueError(
+        #             'Point/label length mismatch in 3D semantic segmentation '
+        #             f'loading: points={num_points}, '
+        #             f'pts_semantic_mask={pts_semantic_mask.shape[0]}. '
+        #             f'Please check pts_semantic_mask_path: {pts_semantic_mask_path}')
 
         results['pts_semantic_mask'] = pts_semantic_mask
 

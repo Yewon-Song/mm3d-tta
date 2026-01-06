@@ -5,7 +5,7 @@ _base_ = [
 
 model = dict(
     data_preprocessor=dict(
-        max_voxels= 160000  # (train, test) 예시
+        max_voxels= 80000  # (train, test) 예시
     ),
     backbone=dict(encoder_blocks=[2, 3, 4, 6])
 )
