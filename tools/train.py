@@ -69,6 +69,15 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Enable CUDA debugging if requested via environment variable
+    # This helps identify the exact location of CUDA errors
+    if os.environ.get('CUDA_LAUNCH_BLOCKING', '0') == '1':
+        print_log(
+            'CUDA_LAUNCH_BLOCKING is enabled. This will slow down training '
+            'but provides more accurate error locations.',
+            logger='current',
+            level=logging.INFO)
+
     # load config
     cfg = Config.fromfile(args.config)
 
