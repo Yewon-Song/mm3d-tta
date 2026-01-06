@@ -30,6 +30,14 @@ class SegMetric(BaseMetric):
         submission_prefix (str, optional): The prefix of submission data.
             If not specified, the submission data will not be generated.
             Default: None.
+        class_names (Sequence[str] | None, optional): Class names used for
+            printing evaluation tables. If given, overrides dataset_meta
+            names for logging only. Defaults to None.
+        eval_label_mapping (dict[int, int] | None, optional): Mapping from
+            the original label space to an evaluation-only label space
+            (e.g., merging fine-grained classes into super-classes).
+            This affects metric computation and printing, but does NOT change
+            model outputs or dataset labels. Defaults to None.
     """
 
     def __init__(self,
@@ -37,9 +45,13 @@ class SegMetric(BaseMetric):
                  prefix: Optional[str] = None,
                  pklfile_prefix: str = None,
                  submission_prefix: str = None,
+                 class_names: Optional[Sequence[str]] = None,
+                 eval_label_mapping: Optional[dict] = None,
                  **kwargs):
         self.pklfile_prefix = pklfile_prefix
         self.submission_prefix = submission_prefix
+        self.class_names = list(class_names) if class_names is not None else None
+        self.eval_label_mapping = eval_label_mapping
         super(SegMetric, self).__init__(
             prefix=prefix, collect_device=collect_device)
 
@@ -117,6 +129,8 @@ class SegMetric(BaseMetric):
             return None
 
         label2cat = self.dataset_meta['label2cat']
+        if self.class_names is not None:
+            label2cat = {i: name for i, name in enumerate(self.class_names)}
         ignore_index = self.dataset_meta['ignore_index']
 
         gt_semantic_masks = []
@@ -132,6 +146,7 @@ class SegMetric(BaseMetric):
             pred_semantic_masks,
             label2cat,
             ignore_index,
-            logger=logger)
+            logger=logger,
+            label_mapping=self.eval_label_mapping)
 
         return ret_dict

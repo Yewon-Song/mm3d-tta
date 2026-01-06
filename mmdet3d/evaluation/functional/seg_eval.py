@@ -18,7 +18,10 @@ def fast_hist(preds, labels, num_classes):
         np.ndarray: Calculated confusion matrix.
     """
 
-    k = (labels >= 0) & (labels < num_classes)
+    # NOTE: We must filter both labels and preds to avoid negative indices
+    # (e.g., when some points are ignored or mapped to -1 for evaluation).
+    k = ((labels >= 0) & (labels < num_classes) & (preds >= 0)
+         & (preds < num_classes))
     bin_count = np.bincount(
         num_classes * labels[k].astype(int) + preds[k],
         minlength=num_classes**2)
@@ -67,7 +70,12 @@ def get_acc_cls(hist):
     return np.nanmean(np.diag(hist) / hist.sum(axis=1))
 
 
-def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, logger=None):
+def seg_eval(gt_labels,
+             seg_preds,
+             label2cat,
+             ignore_index,
+             logger=None,
+             label_mapping=None):
     """Semantic Segmentation  Evaluation.
 
     Evaluate the result of the Semantic Segmentation.
@@ -79,6 +87,12 @@ def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, logger=None):
         ignore_index (int): Index that will be ignored in evaluation.
         logger (logging.Logger | str, optional): The way to print the mAP
             summary. See `mmdet.utils.print_log()` for details. Default: None.
+        label_mapping (dict[int, int] | np.ndarray | None, optional):
+            Optional mapping from the original label space to a new label space
+            for evaluation-only reporting (e.g., merging fine-grained classes
+            into super-classes). Any label not included in the mapping will be
+            treated as ignored (-1).
+            Defaults to None.
 
     Returns:
         dict[str, float]: Dict of results.
@@ -87,6 +101,18 @@ def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, logger=None):
     num_classes = len(label2cat)
 
     hist_list = []
+    map_arr = None
+    if label_mapping is not None:
+        if isinstance(label_mapping, dict):
+            if len(label_mapping) == 0:
+                raise ValueError('label_mapping must not be empty when given.')
+            max_k = int(max(label_mapping.keys()))
+            map_arr = np.ones(max_k + 1, dtype=np.int64) * (-1)
+            for k, v in label_mapping.items():
+                map_arr[int(k)] = int(v)
+        else:
+            map_arr = np.asarray(label_mapping, dtype=np.int64)
+
     for i in range(len(gt_labels)):
         gt_seg = gt_labels[i].astype(np.int64)
         pred_seg = seg_preds[i].astype(np.int64)
@@ -94,6 +120,20 @@ def seg_eval(gt_labels, seg_preds, label2cat, ignore_index, logger=None):
         # filter out ignored points
         pred_seg[gt_seg == ignore_index] = -1
         gt_seg[gt_seg == ignore_index] = -1
+
+        if map_arr is not None:
+            # Map labels for evaluation-only reporting.
+            # Unmapped labels become -1 and are ignored by fast_hist.
+            gt_mapped = np.ones_like(gt_seg, dtype=np.int64) * (-1)
+            pred_mapped = np.ones_like(pred_seg, dtype=np.int64) * (-1)
+
+            gt_valid = (gt_seg >= 0) & (gt_seg < len(map_arr))
+            pred_valid = (pred_seg >= 0) & (pred_seg < len(map_arr))
+            gt_mapped[gt_valid] = map_arr[gt_seg[gt_valid]]
+            pred_mapped[pred_valid] = map_arr[pred_seg[pred_valid]]
+
+            gt_seg = gt_mapped
+            pred_seg = pred_mapped
 
         # calculate one instance result
         hist_list.append(fast_hist(pred_seg, gt_seg, num_classes))
