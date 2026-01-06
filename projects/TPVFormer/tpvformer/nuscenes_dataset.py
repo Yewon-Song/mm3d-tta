@@ -58,16 +58,77 @@ class NuScenesSegDataset(BaseDataset):
         ]
     }
 
+    def _normalize_seg_label_mapping(self, label_mapping: dict,
+                                     ignore_index: int) -> dict:
+        """Normalize segmentation label mapping.
+
+        This dataset is often used with a custom `learning_map` where
+        ignored labels are represented as -1 (as in many lidarseg YAML files).
+        However, loss functions in MMDetection3D typically expect ignored
+        labels to be `ignore_index` (e.g., 255).
+
+        Args:
+            label_mapping (dict): Mapping from raw label id -> target label id.
+                The target label id may be -1 to indicate ignored labels.
+            ignore_index (int): The label id used as ignore index in training.
+
+        Returns:
+            dict: A cleaned mapping with int keys/values where any negative
+                target label is replaced by `ignore_index`.
+        """
+        normalized = {}
+        for k, v in label_mapping.items():
+            kk = int(k)
+            vv = int(v)
+            if vv < 0:
+                vv = int(ignore_index)
+            normalized[kk] = vv
+        return normalized
+
     def __init__(self,
                  data_root: str,
                  ann_file: str,
                  pipeline: List[Union[dict, Callable]] = [],
                  test_mode: bool = False,
+                 modality: dict = None,
+                 filter_empty_gt: bool = True,
                  **kwargs) -> None:
-        metainfo = dict(label2cat={
-            i: cat_name
-            for i, cat_name in enumerate(self.METAINFO['classes'])
-        })
+        # NOTE:
+        # Historically, this dataset ignored config-provided `metainfo` and
+        # always used the hard-coded 17-class mapping above.
+        # For cross-dataset experiments and super-class training (e.g., 7-class
+        # `learning_map`), we must respect `metainfo` from config.
+        metainfo_cfg = kwargs.pop('metainfo', None)
+        kwargs.pop('modality', None)
+        kwargs.pop('filter_empty_gt', None)
+
+        metainfo = dict(metainfo_cfg) if metainfo_cfg is not None else dict()
+        classes = metainfo.get('classes', None)
+        if classes is None:
+            classes = self.METAINFO['classes']
+            metainfo['classes'] = classes
+
+        # Prefer config-provided mapping. Support both names:
+        # - seg_label_mapping: used by PointSegClassMapping
+        # - label_mapping: legacy field used by this dataset
+        mapping = metainfo.get('seg_label_mapping', None)
+        if mapping is None:
+            mapping = metainfo.get('label_mapping', None)
+        if mapping is None:
+            mapping = self.METAINFO.get('label_mapping', {})
+
+        ignore_index = int(metainfo.get('ignore_index',
+                                       self.METAINFO.get('ignore_index', 255)))
+        metainfo['ignore_index'] = ignore_index
+
+        if isinstance(mapping, dict):
+            mapping = self._normalize_seg_label_mapping(mapping, ignore_index)
+        metainfo['seg_label_mapping'] = mapping
+        metainfo['label_mapping'] = mapping
+
+        # Used by SegMetric to print per-class results.
+        metainfo['label2cat'] = {i: cat_name for i, cat_name in enumerate(classes)}
+
         super().__init__(
             ann_file=ann_file,
             data_root=data_root,
@@ -112,7 +173,11 @@ class NuScenesSegDataset(BaseDataset):
 
         # only be used in `PointSegClassMapping` in pipeline
         # to map original semantic class to valid category ids.
-        info['seg_label_mapping'] = self.metainfo['label_mapping']
+        info['seg_label_mapping'] = self.metainfo.get(
+            'seg_label_mapping', self.metainfo.get('label_mapping', {}))
+        # Provide ignore_index to PointSegClassMapping so that ignored labels
+        # become the expected ignore id for loss functions.
+        info['ignore_index'] = int(self.metainfo.get('ignore_index', 255))
 
         # 'eval_ann_info' will be updated in loading transforms
         if self.test_mode:
